@@ -1,3 +1,61 @@
 spring:
   application:
-    name: app
+    name: payment-request-service
+
+  datasource:
+    url: jdbc:postgresql://localhost:5432/payment_request_service
+    username: payment_request_service
+    password: payment_request_service
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: update
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  kafka:
+    bootstrap-servers: localhost:9092
+    consumer:
+      group-id: payment-request-service
+      auto-offset-reset: earliest
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      properties:
+        spring.json.trusted.packages: 'br.com.breno.itaucorp.paymentrequestservice.*'
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+
+app:
+  kafka:
+    topics:
+      payment-request-created: payment.request.created
+      payment-request-status-changed: payment.request.status-changed
+  payment-gateway:
+    base-url: http://localhost:8080/mock/payment-gateway
+
+resilience4j:
+  retry:
+    instances:
+      paymentGateway:
+        max-attempts: 2
+        wait-duration: 500ms
+        retry-exceptions:
+          - br.com.breno.itaucorp.paymentrequestservice.domain.exception.PaymentGatewayUnavailableException
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+
+logging:
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level [correlationId=%X{correlationId:-}] %logger{36} - %msg%n"
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
