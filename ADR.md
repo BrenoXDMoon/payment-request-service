@@ -75,3 +75,28 @@ Este documento registra as decisões arquiteturais tomadas ao longo da implement
 **Decisão:** não existe um endpoint `PATCH /payment-requests/{id}/status` de uso livre. A transição de status é resultado do fluxo assíncrono: criação publica `PaymentRequestCreated`, o próprio serviço consome esse evento e conduz a solicitação por `PROCESSING` até um estado terminal.
 
 **Justificativa:** expor uma transição de estado arbitrária via API contornaria a máquina de estados do agregado e não reflete um caso de uso real do domínio. O requisito funcional "atualizar status conforme o fluxo modelado" é atendido pelo fluxo interno orientado a eventos, que é o mecanismo de atualização de fato.
+
+---
+
+## ADR-009 — Persistência: entidades JPA próprias, mapeadas manualmente a partir do agregado de domínio
+
+**Contexto:** a Etapa 2 (persistência) precisa mapear o agregado `PaymentRequest` (que não pode depender de JPA, por ADR-001) para as tabelas `payment_request` e `event_history`.
+
+**Decisão:** `PaymentRequestJpaEntity` e `EventHistoryJpaEntity` (pacote `adapter.persistence.entity`) são classes de mapeamento dedicadas, independentes das classes de domínio. Um mapper estático (`PaymentRequestEntityMapper`) converte em ambas as direções. O agregado é reidratado via `PaymentRequest.reconstitute(...)` (já previsto desde a Etapa 1). A tabela `event_history` usa a constraint `UNIQUE (payment_request_id, new_status)` definida em ADR-005.
+
+**Estratégia de save idempotente:** como o agregado sempre carrega o histórico completo em memória (não apenas os eventos novos), o adapter (`PaymentRequestRepositoryAdapter`) busca a entidade existente por id; se encontrada, `updateEntity` insere apenas as linhas de `history` cujo `newStatus` ainda não está persistido (evita tentar reinserir uma linha já existente, o que violaria a constraint única sem necessidade). Se não encontrada, persiste a entidade nova com todo o histórico.
+
+**Trade-off assumido:** duas chamadas ao banco por `save` (find + save) em vez de uma única `upsert`; aceitável no escopo do exercício, dado o volume esperado e a simplicidade resultante.
+
+---
+
+## ADR-010 — Ajustes de dependências de teste para compatibilidade com Spring Boot 4.0.7 e Docker Desktop atual
+
+**Contexto:** ao implementar o primeiro teste de integração com Testcontainers (Etapa 2), duas incompatibilidades de ambiente/versão surgiram e precisaram ser corrigidas:
+
+1. **Fatias de teste do Spring Boot 4 foram modularizadas.** `@DataJpaTest` e `@AutoConfigureTestDatabase` deixaram de fazer parte de `spring-boot-starter-test` e passaram a viver em módulos próprios (`org.springframework.boot.data.jpa.test.autoconfigure` e `org.springframework.boot.jdbc.test.autoconfigure`, respectivamente). Foi necessário adicionar a dependência `org.springframework.boot:spring-boot-starter-data-jpa-test` (`testImplementation`) para disponibilizar essas anotações.
+2. **Testcontainers 1.21.3 é incompatível com Docker Engine 29** (bundle do Docker Desktop instalado localmente): o cliente HTTP interno (docker-java) negocia por padrão uma versão de API antiga (1.32) que o daemon rejeita com `400 Bad Request`, impedindo `NpipeSocketClientProviderStrategy` de detectar o Docker no Windows. A correção adotada foi atualizar o `testcontainers-bom` para `2.0.5` (linha que resolve essa negociação de versão), o que exigiu renomear os artefatos de módulo usados (`org.testcontainers:junit-jupiter` → `org.testcontainers:testcontainers-junit-jupiter`, mesma convenção para `postgresql` e `kafka`), sem alteração de código nos testes além dos imports do `@DataJpaTest`.
+
+**Decisão:** manter as versões corrigidas (`spring-boot-starter-data-jpa-test` + `testcontainers-bom:2.0.5` com artefatos prefixados) documentadas aqui para que o ambiente seja reproduzível sem re-descobrir esses dois problemas.
+
+**Trade-off assumido:** nenhum — são correções de compatibilidade, não decisões de design; registradas por transparência, já que a Regra 3 do desafio pede que decisões tomadas ao longo do processo (mesmo as técnicas/operacionais) fiquem documentadas.

@@ -34,3 +34,20 @@ Este projeto foi desenvolvido com apoio de IA generativa. Este arquivo é atuali
 - Remoção do teste `AppApplicationTests` (placeholder do Spring Initializr, sem asserts) — será substituído por um teste de contexto real apoiado em Testcontainers quando a camada de persistência/mensageria existir.
 
 **Revisão humana:** build (`./gradlew test`) executado e validado pela IA após a implementação — 32 testes, 0 falhas.
+
+---
+
+## Etapa 2 — Persistência (PostgreSQL / JPA)
+
+**Prompt principal enviado:**
+> "continue a implementação do ponto que paramos"
+
+**O que foi gerado por IA:**
+- Porta de saída `application.port.out.PaymentRequestRepository` (interface `save`/`findById`), consumida futuramente pelos casos de uso da camada de aplicação.
+- Entidades JPA em `adapter.persistence.entity`: `PaymentRequestJpaEntity` (tabela `payment_request`) e `EventHistoryJpaEntity` (tabela `event_history`, com a constraint única `UNIQUE (payment_request_id, new_status)` definida em ADR-005).
+- `PaymentRequestJpaRepository` (Spring Data JPA) e `PaymentRequestRepositoryAdapter`, que implementa a porta de saída usando o repositório Spring Data + o mapper.
+- `PaymentRequestEntityMapper` (mapeamento manual, estático, sem MapStruct): `toEntity`, `toDomain` (via `PaymentRequest.reconstitute`) e `updateEntity` — este último insere apenas as linhas de histórico ainda não persistidas, dando idempotência ao `save` sem depender de upsert no banco (ver ADR-009).
+- Teste de integração `PaymentRequestRepositoryAdapterIT` (`@DataJpaTest` + Testcontainers `PostgreSQLContainer`), cobrindo: round-trip completo de criação/reidratação, persistência incremental de apenas o histórico novo em um segundo `save` após uma transição de estado, e retorno vazio para id inexistente.
+- Duas correções de compatibilidade de ambiente descobertas ao rodar os testes pela primeira vez (detalhadas em ADR-010): adição de `spring-boot-starter-data-jpa-test` (as fatias de teste do Spring Boot 4 foram modularizadas — `@DataJpaTest` não está mais em `spring-boot-starter-test`) e upgrade do `testcontainers-bom` de `1.21.3` para `2.0.5` (a versão anterior não negocia corretamente a API do Docker Engine 29 do Docker Desktop instalado localmente, retornando 400 Bad Request e impedindo o Testcontainers de detectar o Docker no Windows).
+
+**Revisão humana:** build (`./gradlew test`) executado pela IA com Docker Desktop ativo localmente — 35 testes, 0 falhas, incluindo o teste de integração real contra PostgreSQL via Testcontainers.
