@@ -51,3 +51,39 @@ Este projeto foi desenvolvido com apoio de IA generativa. Este arquivo é atuali
 - Duas correções de compatibilidade de ambiente descobertas ao rodar os testes pela primeira vez (detalhadas em ADR-010): adição de `spring-boot-starter-data-jpa-test` (as fatias de teste do Spring Boot 4 foram modularizadas — `@DataJpaTest` não está mais em `spring-boot-starter-test`) e upgrade do `testcontainers-bom` de `1.21.3` para `2.0.5` (a versão anterior não negocia corretamente a API do Docker Engine 29 do Docker Desktop instalado localmente, retornando 400 Bad Request e impedindo o Testcontainers de detectar o Docker no Windows).
 
 **Revisão humana:** build (`./gradlew test`) executado pela IA com Docker Desktop ativo localmente — 35 testes, 0 falhas, incluindo o teste de integração real contra PostgreSQL via Testcontainers.
+
+---
+
+## Etapa 3 — Eventos (Kafka)
+
+**Prompt principal enviado:**
+> "podemos seguir para a etapa do kafka"
+
+**O que foi gerado por IA:**
+- Antes de codificar, a IA leu o histórico da sessão anterior (ADR.md, AI_USAGE.md, README.md, código já existente) para reconstruir o estado do projeto, já que a conversa era nova — não havia memória de sessão anterior disponível.
+- Portas de aplicação: `DomainEventPublisher` (saída, genérica para qualquer `DomainEvent`), `CreatePaymentRequestUseCase`/`CreatePaymentRequestCommand` e `StartProcessingUseCase` (entrada).
+- Serviços de aplicação `CreatePaymentRequestService` (cria o agregado, persiste e publica `PaymentRequestCreated`) e `StartProcessingService` (consome o evento de criação, conduz `CREATED→PROCESSING`, com tratamento de idempotência para eventos duplicados/fora de ordem via `InvalidStateTransitionException` e `DataIntegrityViolationException` — ver ADR-005).
+- Adapter de mensageria (`adapter.messaging`): `KafkaDomainEventPublisher` (roteia cada tipo de evento de domínio para o tópico configurado, chave de partição = `paymentRequestId`) e `PaymentRequestCreatedEventListener` (`@KafkaListener` que aciona `StartProcessingUseCase`).
+- Decisão de escopo registrada em ADR-011: a transição `PROCESSING→terminal` (que depende do gateway externo, ainda não implementado) fica para a Etapa 4, evitando um adapter provisório apenas para o contexto Spring subir.
+- Trade-off de "save then publish" sem outbox transacional registrado em ADR-012.
+- Teste de integração ponta a ponta `PaymentRequestEventFlowIT` (`@SpringBootTest` completo + Testcontainers PostgreSQL e Kafka): cria a solicitação via `CreatePaymentRequestUseCase` e usa Awaitility para aguardar o consumidor mover o status para `PROCESSING` de forma assíncrona via Kafka real. Testes unitários dos dois serviços com Mockito (`CreatePaymentRequestServiceTest`, `StartProcessingServiceTest`).
+- Três incompatibilidades adicionais de ambiente/versão com Spring Boot 4.0.7 foram descobertas e corrigidas ao rodar o teste de contexto completo pela primeira vez (detalhadas em ADR-013): troca de `spring-kafka` por `org.springframework.boot:spring-boot-starter-kafka` (autoconfiguração do Kafka foi extraída para módulo próprio no Boot 4), troca de `resilience4j-spring-boot3` por `resilience4j-spring-boot4:2.4.0` (o módulo `spring-boot3` recusa-se a rodar em Spring Boot 4 via verificação em runtime) e upgrade do `spring-cloud-dependencies` de `2025.0.0` para `2025.1.2` (trem de release do Spring Cloud alinhado ao Spring Boot 4).
+
+**Revisão humana:** build (`./gradlew test`) executado pela IA com Docker Desktop ativo localmente — 41 testes, 0 falhas, incluindo o fluxo de ponta a ponta real via Kafka (Testcontainers) além dos testes já existentes de domínio e persistência.
+
+---
+
+## Etapa 4 — API REST e integração com gateway de pagamento
+
+**Nota sobre esta entrada:** a Etapa 4 foi implementada em uma sessão anterior do Claude Code, cuja conversa não estava disponível nesta sessão (nova conversa, sem memória do histórico de prompts). Por isso, o registro abaixo foi reconstruído por inspeção direta do código gerado, em vez de citar o prompt original — mantendo a precisão exigida por este arquivo sem inventar uma citação.
+
+**O que foi gerado por IA (identificado por inspeção de código):**
+- Camada web (`adapter.web`): `PaymentRequestController` (`POST /payment-requests` e `GET /payment-requests/{id}`), DTOs `CreatePaymentRequestRequest`/`PaymentRequestResponse`/`EventHistoryResponse`, e `GlobalExceptionHandler` (`@RestControllerAdvice`) padronizando o corpo de erro para not-found/validação/bad-request/erro inesperado.
+- Integração com o gateway externo (`adapter.external.gateway`): `PaymentGatewayAdapter` implementando a porta `PaymentGatewayPort`, delegando a `PaymentGatewayFeignClient` (`@FeignClient`) com DTOs próprios do adapter, convertendo `FeignException` em `PaymentGatewayUnavailableException` do domínio e anotado com `@Retry(name = "paymentGateway")` (Resilience4j).
+- `MockPaymentGatewayController` (`adapter.web.mock`), simulando os três desfechos do gateway (aprovado / rejeitado por regra de negócio / indisponível) de forma determinística a partir do payload da requisição — ver ADR-007.
+- `ProcessPaymentRequestUseCase`/`ProcessPaymentRequestService`, que substituiu o `StartProcessingUseCase`/`StartProcessingService` da Etapa 3: agora conduz o fluxo completo `CREATED→PROCESSING→{COMPLETED|REJECTED|FAILED}`, chamando o gateway real após iniciar o processamento.
+- `OpenApiConfig` e anotações springdoc nos endpoints, expondo a documentação em `/swagger-ui.html`.
+- Testes: `PaymentGatewayAdapterTest` (unitário, Mockito, cobrindo mapeamento de resposta aprovada/rejeitada e tradução de `FeignException`) e `ProcessPaymentRequestServiceTest` (unitário, cobrindo aprovado/rejeitado/indisponível/não encontrado/evento duplicado/conflito de constraint única).
+- Decisões formalizadas em ADR-014 (camada REST + integração via Feign), com correção de referências desatualizadas nas ADR-011/ADR-012 (nomes antigos `StartProcessingUseCase`/`StartProcessingService`).
+
+**Revisão humana (nesta sessão):** build (`./gradlew clean test`) executado com Docker Desktop ativo localmente — 46 testes, 0 falhas. Identificado e corrigido um gap de cobertura: o teste de integração ponta a ponta (`PaymentRequestEventFlowIT`) rodava com `@SpringBootTest` em modo `MOCK` (sem servidor HTTP real), então a chamada Feign ao gateway nunca era de fato exercitada — o teste validava apenas `CREATED→PROCESSING`, não a finalização do fluxo. Corrigido trocando para `webEnvironment = DEFINED_PORT` e estendendo as asserções (ver ADR-014 e commit correspondente).

@@ -100,3 +100,49 @@ Este documento registra as decisões arquiteturais tomadas ao longo da implement
 **Decisão:** manter as versões corrigidas (`spring-boot-starter-data-jpa-test` + `testcontainers-bom:2.0.5` com artefatos prefixados) documentadas aqui para que o ambiente seja reproduzível sem re-descobrir esses dois problemas.
 
 **Trade-off assumido:** nenhum — são correções de compatibilidade, não decisões de design; registradas por transparência, já que a Regra 3 do desafio pede que decisões tomadas ao longo do processo (mesmo as técnicas/operacionais) fiquem documentadas.
+
+---
+
+## ADR-011 — Escopo da Etapa 3 (eventos): consumo de `PaymentRequestCreated` limitado à transição `CREATED→PROCESSING`
+
+**Contexto:** a Etapa 3 cobre a infraestrutura de mensageria Kafka (publicação e consumo de eventos de domínio). A transição `PROCESSING→{COMPLETED|REJECTED|FAILED}` depende da chamada ao gateway externo de pagamento (`PaymentGatewayPort` + `FeignClient` + mock), que é objeto da Etapa 4 (API REST).
+
+**Decisão:** nesta etapa, o consumidor Kafka (`PaymentRequestCreatedEventListener`) reage ao evento `PaymentRequestCreated` publicado na criação e conduz apenas `CREATED→PROCESSING` (via `ProcessPaymentRequestUseCase`/`ProcessPaymentRequestService`), persistindo a transição e publicando `PaymentRequestStatusChanged` no tópico correspondente. A finalização do fluxo (chamada ao gateway com retry via Resilience4j e transição para o estado terminal) fica para a Etapa 4, quando `PaymentGatewayPort` ganha implementação concreta.
+
+**Justificativa:** evita introduzir uma porta de saída (`PaymentGatewayPort`) sem adapter real nesta etapa, o que exigiria um bean "provisório" apenas para o contexto Spring subir — múltiplas implementações provisórias geram retrabalho e um histórico de commits menos claro sobre o que de fato foi entregue em cada etapa. A separação também espelha a extensão natural do desafio: "eventos" (mensageria) e "API REST" (endpoints HTTP + integração externa) são etapas distintas no plano aprovado.
+
+**Trade-off assumido:** entre a Etapa 3 e a Etapa 4, uma solicitação de pagamento pode ficar "parada" em `PROCESSING` sem nunca alcançar um estado terminal — aceitável, pois é um estado intermediário do desenvolvimento incremental, não do sistema em produção.
+
+---
+
+## ADR-012 — Publicação de eventos após persistir (sem outbox transacional)
+
+**Decisão:** `CreatePaymentRequestService` e `ProcessPaymentRequestService` persistem a transição do agregado (`repository.save(...)`) e, em seguida, publicam os eventos de domínio pendentes (`pullDomainEvents()` + `DomainEventPublisher.publish`) como duas operações distintas, sem transação distribuída nem padrão *transactional outbox*.
+
+**Trade-off assumido:** existe uma janela onde o `save` no PostgreSQL é bem-sucedido, mas a publicação no Kafka falha (processo interrompido, broker indisponível) — o evento seria perdido e a solicitação ficaria presa no estado persistido sem que o restante do fluxo fosse notificado. Aceito para o escopo do exercício, dado o ambiente local de curta duração; evolução futura: implementar *outbox pattern* (tabela `outbox_event` gravada na mesma transação do agregado + processo separado publicando para o Kafka) caso o serviço evolua para produção.
+
+---
+
+## ADR-013 — Ajustes de dependências para compatibilidade com Spring Boot 4.0.7 (Kafka, Resilience4j, Spring Cloud)
+
+**Contexto:** ao implementar a Etapa 3 (eventos) e subir o primeiro teste de contexto completo (`@SpringBootTest`) com Kafka via Testcontainers, três incompatibilidades adicionais de versão surgiram (Spring Boot 4.0.7 é uma versão muito recente, e parte do ecossistema ainda está migrando):
+
+1. **Autoconfiguração do Kafka foi extraída de `spring-boot-autoconfigure` para um módulo próprio.** Assim como `@DataJpaTest` (ADR-010), `KafkaAutoConfiguration`/`KafkaProperties` deixaram de existir em `spring-boot-autoconfigure` e passaram a viver em `org.springframework.boot:spring-boot-kafka` (pacote `org.springframework.boot.kafka.autoconfigure`). Foi necessário trocar a dependência `org.springframework.kafka:spring-kafka` por `org.springframework.boot:spring-boot-starter-kafka` (que traz o novo módulo de autoconfiguração + `spring-kafka` transitivamente); sem isso, nenhum bean `KafkaTemplate`/`KafkaListenerContainerFactory` era criado e o contexto Spring falhava ao subir o listener.
+2. **`resilience4j-spring-boot3` não é compatível com Spring Boot 4** — a partir da versão 2.3.0 ele referencia classes (`RxJava3FallbackDecorator` em `resilience4j-spring6`) que exigiam alinhar a versão via `resilience4j-bom`, e mesmo assim o módulo possui um verificador de compatibilidade em runtime (`SpringBoot3Verifier`) que lança `IncompatibleSpringBootVersionException` para qualquer Spring Boot ≥ 4. A correção foi trocar para o artefato `io.github.resilience4j:resilience4j-spring-boot4:2.4.0` (módulo dedicado ao Spring Boot 4, lançado junto da versão 2.4.0 do resilience4j, ainda não coberto pelo `resilience4j-bom:2.4.0` — por isso fixado com versão explícita).
+3. **`spring-cloud-starter-openfeign` (via `spring-cloud-dependencies:2025.0.0`) referenciava `org.springframework.boot.web.context.WebServerInitializedEvent`**, classe reorganizada de pacote no Spring Boot 4. A correção foi atualizar o BOM do Spring Cloud para `2025.1.2` (trem de release alinhado ao Spring Boot 4).
+
+**Decisão:** manter essas versões documentadas aqui pelo mesmo motivo do ADR-010 — reprodutibilidade do ambiente sem precisar re-descobrir os três problemas. `resilience4j-bom` foi adicionado a `dependencyManagement.imports` para manter todos os módulos `io.github.resilience4j:*` (exceto `resilience4j-spring-boot4`, ainda não coberto pelo BOM) em versões mutuamente compatíveis.
+
+**Trade-off assumido:** nenhum — correções de compatibilidade, não decisões de design.
+
+---
+
+## ADR-014 — Etapa 4: camada REST e integração com gateway via Feign
+
+**Contexto:** a Etapa 4 fecha o fluxo completo do agregado, cobrindo os dois pontos que faltavam desde a Etapa 3 (ver ADR-011): expor `PaymentRequest` via API HTTP e implementar de fato a chamada ao gateway externo de pagamento que conduz `PROCESSING→{COMPLETED|REJECTED|FAILED}`.
+
+**Decisão — API REST:** `PaymentRequestController` expõe apenas `POST /payment-requests` (cria e retorna 201 com `Location`) e `GET /payment-requests/{id}` (retorna 404 via `PaymentRequestNotFoundException` quando não encontrado), consumindo as portas de entrada `CreatePaymentRequestUseCase`/`GetPaymentRequestUseCase` — sem endpoint de atualização manual de status, conforme já decidido na ADR-008. Erros são padronizados por um único `@RestControllerAdvice` (`GlobalExceptionHandler`), que traduz `PaymentRequestNotFoundException`→404, `IllegalArgumentException`/`InvalidStateTransitionException`→400, `MethodArgumentNotValidException`→400 (mensagem agregada por campo) e qualquer outra exceção→500, sempre no mesmo formato de corpo (`timestamp`/`status`/`error`/`message`).
+
+**Decisão — integração com o gateway:** `PaymentGatewayPort` (porta de saída da aplicação) é implementada por `PaymentGatewayAdapter`, que delega a um `PaymentGatewayFeignClient` (`@FeignClient` apontando para `app.payment-gateway.base-url`, hoje o `MockPaymentGatewayController` embutido no próprio serviço — ver ADR-007) e usa DTOs próprios do adapter (`PaymentGatewayRequestDto`/`PaymentGatewayResponseDto`), sem vazar tipos do Feign para a camada de aplicação. O método `process` é anotado com `@Retry(name = "paymentGateway")` (Resilience4j, configurado em `application.yaml` com 2 tentativas), e qualquer `FeignException` (timeout, 5xx, conexão recusada) é convertida em `PaymentGatewayUnavailableException` do domínio — que é justamente a exceção configurada como `retry-exceptions` do Resilience4j. Se o retry se esgotar, `ProcessPaymentRequestService` captura a exceção e conduz o agregado a `FAILED` (sem persistir o laço técnico de retry, conforme ADR-003).
+
+**Trade-off assumido:** a URL do gateway mock aponta para `localhost` fixo (mesma porta HTTP do próprio serviço), o que é adequado para o exercício (ADR-007) mas exige atenção ao portar para um ambiente real com gateway externo de fato — nesse caso `app.payment-gateway.base-url` passaria a apontar para outro host/serviço, sem qualquer mudança de código.
