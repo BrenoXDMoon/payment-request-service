@@ -37,7 +37,7 @@ Você irá implementar a solução para o desafio técnico "Jornada de Pagamento
 
 - **Agregado raiz:** `PaymentRequest` — campos: `id` (UUID), `amount` (Value Object `Money`), `origin`, `destination`, `context`, `status`, `createdAt`, `updatedAt`, `history` (lista de `EventHistory`)
 - **Value Object:** `Money` (amount + currency)
-- **Entidade interna:** `EventHistory` — registra cada transição (`previousStatus`, `newStatus`, `timestamp`, `reason`)
+- **Entidade interna:** `EventHistory` — registra cada transição (`previousStatus`, `paymentStatus`, `timestamp`, `reason`)
 - **Enum de estado:** `PaymentStatus { CREATED, PROCESSING, COMPLETED, REJECTED, FAILED }`
 - **Máquina de estados:**
     - `CREATED` → `PROCESSING` (início do processamento)

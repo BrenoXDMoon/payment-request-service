@@ -21,4 +21,16 @@ Este projeto foi desenvolvido com apoio de IA generativa. Este arquivo é atuali
 
 ---
 
-*As próximas etapas (domínio, persistência, eventos, API REST, integração externa/resiliência, observabilidade, testes) serão registradas aqui à medida que forem implementadas.*
+## Etapa 1 — Domínio
+
+**Prompt principal enviado:**
+> "pode seguir"
+
+**O que foi gerado por IA:**
+- Pacotes `domain.model`, `domain.event`, `domain.exception`.
+- `PaymentStatus` (máquina de estados via `allowedNextStates()` por constante do enum), `Money` (Value Object com validação de valor positivo e código ISO 4217), `EventHistory` (registro imutável de transição), agregado `PaymentRequest` (factory `create`, factory de reidratação `reconstitute`, métodos de transição `startProcessing/complete/reject/fail` que validam a máquina de estados e acumulam eventos de domínio via `pullDomainEvents()`).
+- Eventos de domínio `PaymentRequestCreatedEvent` e `PaymentRequestStatusChangedEvent`, e exceções `InvalidStateTransitionException`, `PaymentRejectedException`, `PaymentGatewayUnavailableException`.
+- Testes unitários (`MoneyTest`, `PaymentStatusTest`, `PaymentRequestTest`) com JUnit 5 + Instancio (geração de `origin`/`destination`/`context`), cobrindo transições válidas/inválidas, imutabilidade do histórico exposto e limpeza de eventos pendentes.
+- Remoção do teste `AppApplicationTests` (placeholder do Spring Initializr, sem asserts) — será substituído por um teste de contexto real apoiado em Testcontainers quando a camada de persistência/mensageria existir.
+
+**Revisão humana:** build (`./gradlew test`) executado e validado pela IA após a implementação — 32 testes, 0 falhas.
