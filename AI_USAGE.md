@@ -87,3 +87,20 @@ Este projeto foi desenvolvido com apoio de IA generativa. Este arquivo é atuali
 - Decisões formalizadas em ADR-014 (camada REST + integração via Feign), com correção de referências desatualizadas nas ADR-011/ADR-012 (nomes antigos `StartProcessingUseCase`/`StartProcessingService`).
 
 **Revisão humana (nesta sessão):** build (`./gradlew clean test`) executado com Docker Desktop ativo localmente — 46 testes, 0 falhas. Identificado e corrigido um gap de cobertura: o teste de integração ponta a ponta (`PaymentRequestEventFlowIT`) rodava com `@SpringBootTest` em modo `MOCK` (sem servidor HTTP real), então a chamada Feign ao gateway nunca era de fato exercitada — o teste validava apenas `CREATED→PROCESSING`, não a finalização do fluxo. Corrigido trocando para `webEnvironment = DEFINED_PORT` e estendendo as asserções (ver ADR-014 e commit correspondente).
+
+---
+
+## Etapa 6 — Observabilidade (correlação de requisições)
+
+**Prompt principal enviado:**
+> "retoma pela pendência imediata, depois segue pra observabilidade"
+
+**O que foi gerado por IA:**
+- Diagnóstico: o padrão de log em `application.yaml` já referenciava `%X{correlationId}` desde a Etapa 0, mas nenhum componente populava esse valor — todo log saía com `correlationId=` vazio, e o requisito não funcional de "correlação de requisições" não estava de fato atendido.
+- `CorrelationIdContext` (pacote `observability`): constantes compartilhadas (chave de MDC, nome do header HTTP, nome do header Kafka).
+- `CorrelationIdFilter` (`adapter.web.filter`, `OncePerRequestFilter`): reaproveita `X-Correlation-Id` do header de entrada ou gera um novo UUID, popula o MDC durante a requisição, devolve o valor no header de resposta e limpa o MDC no `finally`.
+- Propagação através do Kafka: `KafkaDomainEventPublisher` anexa o `correlationId` corrente do MDC como header do `ProducerRecord`; `PaymentRequestCreatedEventListener` lê esse header e repõe o valor no MDC da thread do consumidor antes de processar o evento (limpando depois) — assim toda a cadeia síncrona que roda a partir daí (`ProcessPaymentRequestService`, chamada ao gateway, nova publicação de `PaymentRequestStatusChanged`) carrega o mesmo `correlationId`, mesmo atravessando a fronteira assíncrona HTTP → Kafka → consumidor.
+- Decisão registrada em ADR-015.
+- `CorrelationIdFilterTest` (unitário): cobre geração de novo id quando o header está ausente, reaproveitamento do id recebido, e limpeza do MDC mesmo quando a cadeia de filtros lança exceção.
+
+**Revisão humana:** build (`./gradlew clean test`) — 50 testes, 0 falhas. Evidências reais de observabilidade (logs mostrando o mesmo `correlationId` atravessando requisição HTTP → evento Kafka → chamada ao gateway) coletadas subindo a stack local via `docker compose up -d` + `./gradlew bootRun` e documentadas no `README.md`.

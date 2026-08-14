@@ -5,10 +5,15 @@ import br.com.breno.itaucorp.paymentrequestservice.config.KafkaTopicsProperties;
 import br.com.breno.itaucorp.paymentrequestservice.domain.event.DomainEvent;
 import br.com.breno.itaucorp.paymentrequestservice.domain.event.PaymentRequestCreatedEvent;
 import br.com.breno.itaucorp.paymentrequestservice.domain.event.PaymentRequestStatusChangedEvent;
+import br.com.breno.itaucorp.paymentrequestservice.observability.CorrelationIdContext;
+import java.nio.charset.StandardCharsets;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.apache.kafka.clients.producer.ProducerRecord;
+import org.slf4j.MDC;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Component;
+import org.springframework.util.StringUtils;
 
 @Slf4j
 @Component
@@ -24,7 +29,13 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
         String key = event.paymentRequestId().toString();
 
         log.info("Publicando evento {} no tópico {}: paymentRequestId={}", event.getClass().getSimpleName(), topic, key);
-        kafkaTemplate.send(topic, key, event);
+
+        ProducerRecord<Object, Object> record = new ProducerRecord<>(topic, key, event);
+        String correlationId = MDC.get(CorrelationIdContext.MDC_KEY);
+        if (StringUtils.hasText(correlationId)) {
+            record.headers().add(CorrelationIdContext.KAFKA_HEADER, correlationId.getBytes(StandardCharsets.UTF_8));
+        }
+        kafkaTemplate.send(record);
     }
 
     private String resolveTopic(DomainEvent event) {
