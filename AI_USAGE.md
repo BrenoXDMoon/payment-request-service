@@ -11,6 +11,8 @@ Este projeto foi desenvolvido com apoio de IA generativa. Este arquivo é atuali
 **Prompt principal enviado:**
 > "leia o arquivo docs/ai-initial-context.md e gere o passo à passo para implementação no diretório /app"
 
+**Prompt após output do prompt anterior:** quero que escreva um prompt para uma IA geradora de código, levando em consideração o documento que estamos utilizando como guia para implementar este desafio. Quero que seja assumido o papel de um engenheiro de software, e que antes da implementação seja gerado um passo à passo do que será codificado. Um ponto de atenção muito importante são os registros de prompts devido a necessidade de declarar que foi feito o uso de inteligência artificial. Outro ponto importante é rodar a infraestrutura de banco de dados, estrutura de fila de eventos e mocks em ambiente local, e para este requisito quero que seja usado para fila o Apache Kafka e para o banco de dados quero que seja utilizado PostgreSQL. A linguagem que estarei usando será o Java 25, combinado com o framework Spring na versão 4.0.7. Os demais pontos do prompt irei corrigir junto com você
+
 **O que foi gerado por IA:**
 - Leitura de `docs/ai-initial-context.md` e `docs/desafio_tecnico_jornada_pagamentos_v2.pdf` (documento original do desafio) para consolidar os requisitos.
 - Plano de implementação completo (estrutura de pacotes hexagonal, modelagem do agregado `PaymentRequest`, eventos de domínio, endpoints REST, estratégia de persistência PostgreSQL, tópicos Kafka e formato de mensagem, estratégia de testes, pontos de observabilidade e decisão sobre mocks), incluindo decisões de design para resolver ambiguidades da especificação (ex.: como o laço `FAILED→PROCESSING` do retry se relaciona com a constraint única de idempotência — ver `ADR.md`, ADR-003).
@@ -24,7 +26,7 @@ Este projeto foi desenvolvido com apoio de IA generativa. Este arquivo é atuali
 ## Etapa 1 — Domínio
 
 **Prompt principal enviado:**
-> "pode seguir"
+> "pode seguir com a implementação de domínio sugerida"
 
 **O que foi gerado por IA:**
 - Pacotes `domain.model`, `domain.event`, `domain.exception`.
