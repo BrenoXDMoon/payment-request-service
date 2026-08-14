@@ -25,13 +25,13 @@ public class KafkaDomainEventPublisher implements DomainEventPublisher {
 
     @Override
     public void publish(DomainEvent event) {
-        String topic = resolveTopic(event);
-        String key = event.paymentRequestId().toString();
+        var topic = resolveTopic(event);
+        var key = event.paymentRequestId().toString();
 
         log.info("Publicando evento {} no tópico {}: paymentRequestId={}", event.getClass().getSimpleName(), topic, key);
 
-        ProducerRecord<Object, Object> record = new ProducerRecord<>(topic, key, event);
-        String correlationId = MDC.get(CorrelationIdContext.MDC_KEY);
+        var record = new ProducerRecord<Object, Object>(topic, key, event);
+        var correlationId = MDC.get(CorrelationIdContext.MDC_KEY);
         if (StringUtils.hasText(correlationId)) {
             record.headers().add(CorrelationIdContext.KAFKA_HEADER, correlationId.getBytes(StandardCharsets.UTF_8));
         }

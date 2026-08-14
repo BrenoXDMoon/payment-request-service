@@ -47,11 +47,12 @@ public class PaymentRequest {
         requireNonBlank(destination, "destination");
         requireNonBlank(context, "context");
 
-        ZonedDateTime now = ZonedDateTime.now();
-        PaymentRequest paymentRequest = new PaymentRequest(
+        var now = ZonedDateTime.now();
+        var paymentRequest = new PaymentRequest(
                 UUID.randomUUID(), amount, origin, destination, context, PaymentStatus.CREATED, now, now);
 
-        paymentRequest.history.add(new EventHistory(null, PaymentStatus.CREATED, now, "Payment request created"));
+        var paymentRequestCreated = new EventHistory(null, PaymentStatus.CREATED, now, "Payment request created");
+        paymentRequest.history.add(paymentRequestCreated);
         paymentRequest.domainEvents.add(
                 new PaymentRequestCreatedEvent(paymentRequest.id, amount, origin, destination, context, now));
 
@@ -61,7 +62,7 @@ public class PaymentRequest {
     public static PaymentRequest reconstitute(UUID id, Money amount, String origin, String destination, String context,
                                                PaymentStatus status, ZonedDateTime createdAt, ZonedDateTime updatedAt,
                                                List<EventHistory> history) {
-        PaymentRequest paymentRequest = new PaymentRequest(id, amount, origin, destination, context, status, createdAt, updatedAt);
+        var paymentRequest = new PaymentRequest(id, amount, origin, destination, context, status, createdAt, updatedAt);
         paymentRequest.history.addAll(history);
         return paymentRequest;
     }
@@ -87,17 +88,21 @@ public class PaymentRequest {
             throw new InvalidStateTransitionException(status, paymentStatus);
         }
 
-        PaymentStatus previousStatus = status;
-        ZonedDateTime now = ZonedDateTime.now();
+        var previousStatus = status;
+        var now = ZonedDateTime.now();
 
         status = paymentStatus;
         updatedAt = now;
-        history.add(new EventHistory(previousStatus, paymentStatus, now, reason));
-        domainEvents.add(new PaymentRequestStatusChangedEvent(id, previousStatus, paymentStatus, reason, now));
+
+        var eventHistory = new EventHistory(previousStatus, paymentStatus, now, reason);
+        history.add(eventHistory);
+
+        var paymentRequestStatusChangedEvent = new PaymentRequestStatusChangedEvent(id, previousStatus, paymentStatus, reason, now);
+        domainEvents.add(paymentRequestStatusChangedEvent);
     }
 
     public List<DomainEvent> pullDomainEvents() {
-        List<DomainEvent> events = List.copyOf(domainEvents);
+        var events = List.copyOf(domainEvents);
         domainEvents.clear();
         return events;
     }

@@ -20,8 +20,10 @@ public class CreatePaymentRequestService implements CreatePaymentRequestUseCase 
 
     @Override
     public PaymentRequest create(CreatePaymentRequestCommand command) {
-        PaymentRequest paymentRequest = PaymentRequest.create(
-                new Money(command.amount(), command.currency()),
+
+        var money = new Money(command.amount(), command.currency());
+        var paymentRequest = PaymentRequest.create(
+                money,
                 command.origin(),
                 command.destination(),
                 command.context());

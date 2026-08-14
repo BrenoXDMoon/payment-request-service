@@ -34,10 +34,16 @@ public class PaymentRequestController {
     @ApiResponse(responseCode = "201", description = "Solicitação criada")
     @PostMapping
     public ResponseEntity<PaymentRequestResponse> create(@Valid @RequestBody CreatePaymentRequestRequest request) {
-        var paymentRequest = createPaymentRequestUseCase.create(new CreatePaymentRequestCommand(
-                request.amount(), request.currency(), request.origin(), request.destination(), request.context()));
+        var command = new CreatePaymentRequestCommand(
+                request.amount(),
+                request.currency(),
+                request.origin(),
+                request.destination(),
+                request.context());
 
-        PaymentRequestResponse response = PaymentRequestResponse.from(paymentRequest);
+        var paymentRequest = createPaymentRequestUseCase.create(command);
+
+        var response = PaymentRequestResponse.from(paymentRequest);
         return ResponseEntity.created(URI.create("/payment-requests/" + response.id())).body(response);
     }
 

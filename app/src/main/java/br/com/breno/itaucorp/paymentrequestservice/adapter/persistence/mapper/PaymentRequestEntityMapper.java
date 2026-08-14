@@ -17,7 +17,8 @@ public final class PaymentRequestEntityMapper {
     }
 
     public static PaymentRequestJpaEntity toEntity(PaymentRequest paymentRequest) {
-        PaymentRequestJpaEntity entity = new PaymentRequestJpaEntity();
+        var entity = new PaymentRequestJpaEntity();
+
         entity.setId(paymentRequest.getId());
         entity.setAmount(paymentRequest.getAmount().amount());
         entity.setCurrency(paymentRequest.getAmount().currency());
@@ -37,7 +38,7 @@ public final class PaymentRequestEntityMapper {
         entity.setStatus(paymentRequest.getStatus());
         entity.setUpdatedAt(paymentRequest.getUpdatedAt());
 
-        Set<PaymentStatus> persistedStatuses = entity.getHistory().stream()
+        var persistedStatuses = entity.getHistory().stream()
                 .map(EventHistoryJpaEntity::getNewStatus)
                 .collect(Collectors.toSet());
 
@@ -49,14 +50,16 @@ public final class PaymentRequestEntityMapper {
     }
 
     public static PaymentRequest toDomain(PaymentRequestJpaEntity entity) {
-        List<EventHistory> history = entity.getHistory().stream()
+        var history = entity.getHistory().stream()
                 .sorted(Comparator.comparing(EventHistoryJpaEntity::getTimestamp))
                 .map(PaymentRequestEntityMapper::toDomain)
                 .toList();
 
+        var money = new Money(entity.getAmount(), entity.getCurrency());
+
         return PaymentRequest.reconstitute(
                 entity.getId(),
-                new Money(entity.getAmount(), entity.getCurrency()),
+                money,
                 entity.getOrigin(),
                 entity.getDestination(),
                 entity.getContext(),
@@ -68,12 +71,13 @@ public final class PaymentRequestEntityMapper {
     }
 
     private static EventHistoryJpaEntity toEntity(EventHistory eventHistory, PaymentRequestJpaEntity paymentRequest) {
-        EventHistoryJpaEntity entity = new EventHistoryJpaEntity();
+        var entity = new EventHistoryJpaEntity();
         entity.setPaymentRequest(paymentRequest);
         entity.setPreviousStatus(eventHistory.previousStatus());
         entity.setNewStatus(eventHistory.paymentStatus());
         entity.setTimestamp(eventHistory.timestamp());
         entity.setReason(eventHistory.reason());
+
         return entity;
     }
 

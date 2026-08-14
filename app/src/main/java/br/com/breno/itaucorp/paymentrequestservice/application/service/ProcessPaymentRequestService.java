@@ -27,13 +27,13 @@ public class ProcessPaymentRequestService implements ProcessPaymentRequestUseCas
 
     @Override
     public void process(UUID paymentRequestId) {
-        Optional<PaymentRequest> found = repository.findById(paymentRequestId);
+        var found = repository.findById(paymentRequestId);
         if (found.isEmpty()) {
             log.warn("Solicitação de pagamento não encontrada, evento descartado: paymentRequestId={}", paymentRequestId);
             return;
         }
 
-        PaymentRequest paymentRequest = found.get();
+        var paymentRequest = found.get();
 
         if (!startProcessing(paymentRequest)) {
             return;
@@ -61,7 +61,7 @@ public class ProcessPaymentRequestService implements ProcessPaymentRequestUseCas
     }
 
     private void completeProcessing(PaymentRequest paymentRequest) {
-        PaymentGatewayRequest gatewayRequest = new PaymentGatewayRequest(
+        var gatewayRequest = new PaymentGatewayRequest(
                 paymentRequest.getId(),
                 paymentRequest.getAmount().amount(),
                 paymentRequest.getAmount().currency(),
@@ -70,7 +70,7 @@ public class ProcessPaymentRequestService implements ProcessPaymentRequestUseCas
                 paymentRequest.getContext());
 
         try {
-            PaymentGatewayResponse response = paymentGatewayPort.process(gatewayRequest);
+            var response = paymentGatewayPort.process(gatewayRequest);
             switch (response.outcome()) {
                 case APPROVED -> paymentRequest.complete();
                 case REJECTED -> paymentRequest.reject(response.reason());

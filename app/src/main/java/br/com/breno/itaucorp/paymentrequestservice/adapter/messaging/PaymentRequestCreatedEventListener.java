@@ -26,9 +26,7 @@ public class PaymentRequestCreatedEventListener {
     public void onPaymentRequestCreated(
             PaymentRequestCreatedEvent event,
             @Header(value = CorrelationIdContext.KAFKA_HEADER, required = false) byte[] correlationIdHeader) {
-        String correlationId = correlationIdHeader != null
-                ? new String(correlationIdHeader, StandardCharsets.UTF_8)
-                : UUID.randomUUID().toString();
+        var correlationId = getCorrelationId(correlationIdHeader);
 
         MDC.put(CorrelationIdContext.MDC_KEY, correlationId);
         try {
@@ -37,5 +35,11 @@ public class PaymentRequestCreatedEventListener {
         } finally {
             MDC.remove(CorrelationIdContext.MDC_KEY);
         }
+    }
+
+    private String getCorrelationId(byte[] correlationIdHeader) {
+        return correlationIdHeader != null
+                ? new String(correlationIdHeader, StandardCharsets.UTF_8)
+                : UUID.randomUUID().toString();
     }
 }

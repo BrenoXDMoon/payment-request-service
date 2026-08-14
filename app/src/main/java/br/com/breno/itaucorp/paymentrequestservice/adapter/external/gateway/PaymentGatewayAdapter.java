@@ -21,7 +21,7 @@ public class PaymentGatewayAdapter implements PaymentGatewayPort {
     @Override
     @Retry(name = "paymentGateway")
     public PaymentGatewayResponse process(PaymentGatewayRequest request) {
-        PaymentGatewayRequestDto requestDto = new PaymentGatewayRequestDto(
+        var requestDto = new PaymentGatewayRequestDto(
                 request.paymentRequestId(),
                 request.amount(),
                 request.currency(),
@@ -30,7 +30,7 @@ public class PaymentGatewayAdapter implements PaymentGatewayPort {
                 request.context());
 
         try {
-            PaymentGatewayResponseDto responseDto = feignClient.process(requestDto);
+            var responseDto = feignClient.process(requestDto);
             return new PaymentGatewayResponse(
                     PaymentGatewayOutcome.valueOf(responseDto.outcome().name()),
                     responseDto.reason());

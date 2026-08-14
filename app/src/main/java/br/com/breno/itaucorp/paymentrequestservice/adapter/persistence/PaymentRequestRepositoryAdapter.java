@@ -1,6 +1,5 @@
 package br.com.breno.itaucorp.paymentrequestservice.adapter.persistence;
 
-import br.com.breno.itaucorp.paymentrequestservice.adapter.persistence.entity.PaymentRequestJpaEntity;
 import br.com.breno.itaucorp.paymentrequestservice.adapter.persistence.mapper.PaymentRequestEntityMapper;
 import br.com.breno.itaucorp.paymentrequestservice.application.port.out.PaymentRequestRepository;
 import br.com.breno.itaucorp.paymentrequestservice.domain.model.PaymentRequest;
@@ -19,11 +18,11 @@ public class PaymentRequestRepositoryAdapter implements PaymentRequestRepository
 
     @Override
     public PaymentRequest save(PaymentRequest paymentRequest) {
-        PaymentRequestJpaEntity entity = jpaRepository.findById(paymentRequest.getId())
+        var entity = jpaRepository.findById(paymentRequest.getId())
                 .map(existing -> PaymentRequestEntityMapper.updateEntity(existing, paymentRequest))
                 .orElseGet(() -> PaymentRequestEntityMapper.toEntity(paymentRequest));
 
-        PaymentRequestJpaEntity saved = jpaRepository.save(entity);
+        var saved = jpaRepository.save(entity);
         return PaymentRequestEntityMapper.toDomain(saved);
     }
 
