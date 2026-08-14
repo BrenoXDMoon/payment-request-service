@@ -13,6 +13,7 @@ import br.com.breno.itaucorp.paymentrequestservice.domain.model.PaymentRequest;
 import br.com.breno.itaucorp.paymentrequestservice.domain.model.PaymentStatus;
 import br.com.breno.itaucorp.paymentrequestservice.observability.CorrelationIdContext;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -54,8 +55,7 @@ class PaymentRequestEventFlowIT {
     @Autowired
     private PaymentRequestRepository repository;
 
-    @Autowired
-    private ObjectMapper objectMapper;
+    private final ObjectMapper objectMapper = new ObjectMapper().registerModule(new JavaTimeModule());
 
     private final HttpClient httpClient = HttpClient.newHttpClient();
 
